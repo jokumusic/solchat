@@ -95,6 +95,28 @@ describe("solchat", () => {
   });
 
 
+  it("Update Contact", async () => {
+    const contactAName = "Contact A - updated";  
+    const data = JSON.stringify({prop1:2, prop2:"updated"});
+
+    const txA = await program.methods
+      .updateContact(contactAName, data, contactAKeypair.publicKey)
+      .accounts({
+        creator: contactAKeypair.publicKey,
+        contact: contactAPda,
+      })
+      .transaction();
+    
+    const responseA = await anchor.web3.sendAndConfirmTransaction(provider.connection, txA, [contactAKeypair]);
+    const contactA = await program.account.contact.fetch(contactAPda);
+    expect(contactA.bump).is.equal(contactAPdaBump);
+    expect(contactA.creator).is.eql(contactAKeypair.publicKey);
+    expect(contactA.receiver).is.eql(contactAKeypair.publicKey);
+    expect(contactA.name).is.equal(contactAName);
+    expect(contactA.data).is.equal(data);
+  });
+
+  
   it("Start Direct Conversation", async () => {
     const txA = await program.methods
       .startDirectConversation(conversationStartMessage)

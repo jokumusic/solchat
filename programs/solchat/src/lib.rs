@@ -27,6 +27,21 @@ pub mod solchat {
         Ok(())
     }
 
+    pub fn update_contact(ctx: Context<UpdateContact>, name: String, data: String, receiver: Option<Pubkey>) -> Result<()> {
+        
+        if name.len() > CONTACT_NAME_LEN {
+            return Err(ErrorCode::NameIsTooLong.into());
+        }
+        
+        let contact = &mut ctx.accounts.contact;   
+        contact.receiver = receiver;
+        contact.name = name;
+        contact.data = data;
+
+        Ok(())
+    }
+
+
     pub fn start_direct_conversation(ctx: Context<StartDirectConversation>, message: String) -> Result<()> {
 
         if message.len() > MESSAGE_MAX_LEN {
@@ -74,6 +89,25 @@ pub struct CreateContact<'info> {
     pub system_program: Program<'info, System>
 }
 
+
+#[derive(Accounts)]
+#[instruction(name:String, data:String)]
+pub struct UpdateContact<'info> {
+    #[account(
+        mut,
+        has_one = creator,        
+        seeds = [CONTACT_SEED_BYTES, creator.key().as_ref()],
+        bump,
+        realloc = 8 + CONTACT_SIZE + data.len(),
+        realloc::payer = creator,
+        realloc::zero = false
+    )]
+    pub contact: Account<'info, Contact>,
+    
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 #[instruction(message: String)]
