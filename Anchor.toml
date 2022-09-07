@@ -2,13 +2,13 @@
 seeds = false
 skip-lint = false
 [programs.localnet]
-solchat = "AhqDVkiKVxijhJy3vU9hXFYjcwxaHAkyXsViMa4mEJc7"
+solchat = "FjQr3txvbowVHZud1Ec7QZTYGkmSihvLgyrBmF8FkM5"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "testnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

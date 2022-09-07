@@ -26,26 +26,31 @@ describe("solchat", () => {
       anchor.utils.bytes.utf8.encode("contact"), 
       contactBKeypair.publicKey.toBuffer(),             
     ], program.programId);
+
+  const contacts = [contactAPda, contactBPda];
+  contacts.sort();
+
   let [directConversationPda, directConversationPdaBump] = PublicKey.findProgramAddressSync(
       [
         anchor.utils.bytes.utf8.encode("direct_conversation"), 
-        contactAPda.toBuffer(),
-        contactBPda.toBuffer(),             
+        contacts[0].toBuffer(),
+        contacts[1].toBuffer(),             
       ], program.programId);
 
 
   before((done) => {
     console.log('funding contact accounts');
     const airDropA = provider.connection
-      .requestAirdrop(contactAKeypair.publicKey, 20_000_000)
+      .requestAirdrop(contactAKeypair.publicKey, 20000000)
       .catch(err=>done(err));
 
     const airDropB =  provider.connection
-      .requestAirdrop(contactBKeypair.publicKey, 20_000_000)
+      .requestAirdrop(contactBKeypair.publicKey, 20000000)
       .catch(err=>done(err));
 
-    Promise.all([airDropA, airDropB])
-      .then(async (signatures)=>{
+    Promise
+      .all([airDropA, airDropB])
+      .then(async(signatures)=>{
         const responseA = await provider.connection.confirmTransaction(signatures[0],'confirmed');
         const responseB = await provider.connection.confirmTransaction(signatures[1],'confirmed');
         done();
@@ -123,16 +128,16 @@ describe("solchat", () => {
       .accounts({
         conversation: directConversationPda,
         payer: contactAKeypair.publicKey,
-        from: contactAPda,
-        to: contactBPda,
+        contact1: contacts[0],
+        contact2: contacts[1],
       })
       .transaction();
     
     const responseA = await anchor.web3.sendAndConfirmTransaction(provider.connection, txA, [contactAKeypair]);
     const conversation = await program.account.directConversation.fetch(directConversationPda);
     expect(conversation.bump).is.equal(directConversationPdaBump);
-    expect(conversation.contactA).is.eql(contactAPda);
-    expect(conversation.contactB).is.eql(contactBPda);
+    expect(conversation.contact1).is.eql(contacts[0]);
+    expect(conversation.contact2).is.eql(contacts[1]);
     expect(conversation.messages[0]).is.equal(conversationStartMessage);
   });
 
@@ -146,8 +151,8 @@ describe("solchat", () => {
       .accounts({
         conversation: directConversationPda,
         payer: contactAKeypair.publicKey,
-        contactA: contactAPda,
-        contactB: contactBPda,
+        contact1: contacts[0],
+        contact2: contacts[1],
       })
       .transaction();
     
@@ -160,8 +165,8 @@ describe("solchat", () => {
     .accounts({
       conversation: directConversationPda,
       payer: contactBKeypair.publicKey,
-      contactA: contactAPda,
-      contactB: contactBPda,
+      contact1: contacts[0],
+      contact2: contacts[1],
     })
     .transaction();
   
