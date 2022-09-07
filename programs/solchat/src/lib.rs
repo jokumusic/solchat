@@ -123,7 +123,7 @@ pub struct StartDirectConversation<'info> {
 
     #[account(
         mut,
-        //constraint = (payer.key() == contact1.creator.key() || payer.key() == contact2.creator.key())
+        constraint = (payer.key() == contact1.creator.key() || payer.key() == contact2.creator.key())
     )]
     pub payer: Signer<'info>,
 
@@ -151,7 +151,9 @@ pub struct SendDirectMessage<'info> {
             + (conversation.messages_size as usize) //number of characters. I think this is wrong because of usize miscalculation and is going to screw the pooch
             + (4 + message.len()), //current vec being added + number of characters in message
         realloc::payer = payer,
-        realloc::zero = false
+        realloc::zero = false,
+        seeds = [DIRECT_CONVERSATION_SEED_BYTES, contact1.key().as_ref(), contact2.key().as_ref()],
+        bump=conversation.bump
     )]
     pub conversation: Account<'info, DirectConversation>,
 
