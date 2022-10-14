@@ -5,6 +5,8 @@ declare_id!("FjQr3txvbowVHZud1Ec7QZTYGkmSihvLgyrBmF8FkM5");
 
 const DIRECT_CONVERSATION_SEED_BYTES: &[u8] = b"direct_conversation";
 const CONTACT_SEED_BYTES: &[u8] = b"contact";
+const GROUP_SEED_BYTES: &[u8] = b"group";
+const GROUP_CONTACT_SEED_BYTES: &[u8] = b"group_contact";
 const MESSAGE_MAX_LEN: usize = 1024;
 
 #[program]
@@ -70,6 +72,41 @@ pub mod solchat {
         
         Ok(())
     }
+
+    pub fn create_group(ctx: Context<CreateGroup>, nonce: u16, name: String, data: String) -> Result<()> {
+        
+        if name.len() > GROUP_NAME_LEN {
+            return Err(ErrorCode::NameIsTooLong.into());
+        }
+        
+        let group = &mut ctx.accounts.group;
+        group.bump = *ctx.bumps.get("group").unwrap();
+        group.nonce = nonce;
+        group.owner = ctx.accounts.signer.key();
+        group.name = name;
+        group.data = data;
+
+        let signer_group_contact = &mut ctx.accounts.signer_group_contact;
+        signer_group_contact.bump = *ctx.bumps.get("signer_group_contact").unwrap();
+        signer_group_contact.group = group.key();
+        signer_group_contact.contact = ctx.accounts.contact.key();
+        signer_group_contact.role = GroupContactRole::ADMIN;
+
+        Ok(())
+    }
+
+    pub fn add_group_contact(ctx: Context<AddGroupContact>, role: u8) -> Result<()> {
+       
+        let group_contact = &mut ctx.accounts.group_contact;
+        group_contact.bump = *ctx.bumps.get("group_contact").unwrap();
+        group_contact.group = ctx.accounts.group.key();
+        group_contact.contact = ctx.accounts.contact.key();
+        group_contact.role = role;
+
+        Ok(())
+    }
+
+
 }
 
 #[derive(Accounts)]
@@ -97,7 +134,7 @@ pub struct UpdateContact<'info> {
         mut,
         has_one = creator,        
         seeds = [CONTACT_SEED_BYTES, creator.key().as_ref()],
-        bump,
+        bump = contact.bump,
         realloc = 8 + CONTACT_SIZE + data.len(),
         realloc::payer = creator,
         realloc::zero = false
@@ -168,6 +205,77 @@ pub struct SendDirectMessage<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(nonce: u16, name:String, data:String)]
+pub struct CreateGroup<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [CONTACT_SEED_BYTES, signer.key().as_ref()],
+        bump = contact.bump,
+        constraint = contact.creator == signer.key()
+    )]
+    pub contact: Account<'info, Contact>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = 8 + GROUP_SIZE + data.len(),
+        seeds = [GROUP_SEED_BYTES, signer.key().as_ref(), &nonce.to_be_bytes()],
+        bump
+    )]
+    pub group: Account<'info, Group>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = 8 + GROUP_CONTACT_SIZE,
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), signer.key().as_ref()],
+        bump
+    )]
+    pub signer_group_contact: Account<'info, GroupContact>,
+    pub system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+pub struct AddGroupContact<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [GROUP_SEED_BYTES, group.owner.as_ref(), &group.nonce.to_be_bytes()],
+        bump=group.bump
+    )]
+    pub group: Account<'info, Group>,
+
+
+    #[account(
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), signer.key().as_ref()],
+        bump= signer_group_contact.bump,
+        constraint = signer_group_contact.group == group.key() && signer_group_contact.role == GroupContactRole::ADMIN
+    )]
+    pub signer_group_contact: Account<'info, GroupContact>,
+
+    #[account(
+        init,
+        payer = signer,
+        space = 8 + GROUP_CONTACT_SIZE,
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), contact.creator.as_ref()],
+        bump
+    )]
+    pub group_contact: Account<'info, GroupContact>,
+
+    #[account(
+        seeds = [CONTACT_SEED_BYTES, contact.creator.as_ref()],
+        bump = contact.bump,
+    )]
+    pub contact: Account<'info, Contact>,
+    pub system_program: Program<'info, System>
+}
+
+
+
 
 const CONTACT_NAME_LEN: usize = 100;
 const CONTACT_SIZE: usize = 1 + 32 + (1+32) + (4+CONTACT_NAME_LEN) + 4;
@@ -192,6 +300,28 @@ pub struct DirectConversation {
     pub messages: Vec<String>, //vec is initialized by anchor. check size at creation time
 }
 
+const GROUP_NAME_LEN: usize = 100;
+const GROUP_SIZE: usize = 1 + 2 + 32 + (4+GROUP_NAME_LEN) + 4;
+#[account]
+pub struct Group {
+    pub bump: u8, //1;
+    pub nonce: u16, //2;
+    pub owner: Pubkey, //32;
+    pub name: String, //4+100;
+    pub data: String, //4+size;
+}
+
+const GROUP_CONTACT_SIZE: usize = 1 + 32 + 32 + 1;
+#[account]
+pub struct GroupContact {
+    pub bump: u8, //1;
+    pub group: Pubkey, //32;
+    pub contact: Pubkey, //32;
+    pub role: u8, //1;
+}
+
+
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("name is more than 100 characters")]
@@ -200,4 +330,11 @@ pub enum ErrorCode {
     MessageIsTooLong,
     #[msg("test error")]
     TestError,
+}
+
+
+struct GroupContactRole;
+impl GroupContactRole {
+    //const STANDARD: u8 = 0;
+    const ADMIN: u8 = 1;
 }

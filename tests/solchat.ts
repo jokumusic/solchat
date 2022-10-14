@@ -8,6 +8,8 @@ describe("solchat", () => {
   const contactAKeypair = Keypair.generate();
   const contactBKeypair = Keypair.generate();
   const conversationStartMessage = "Let's chat!";
+  const groupName = "Group1";
+  const groupNonce = 0;
 
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -25,6 +27,24 @@ describe("solchat", () => {
     [
       anchor.utils.bytes.utf8.encode("contact"), 
       contactBKeypair.publicKey.toBuffer(),             
+    ], program.programId);
+  let [groupPda, groupPdaBump] = PublicKey.findProgramAddressSync(
+    [
+      anchor.utils.bytes.utf8.encode("group"), 
+      contactAKeypair.publicKey.toBuffer(),
+      new anchor.BN(groupNonce).toArrayLike(Buffer, 'be', 2),
+    ], program.programId);
+  let [contactAGroupPda, contactAGroupPdaBump] = PublicKey.findProgramAddressSync(
+    [
+      anchor.utils.bytes.utf8.encode("group_contact"),
+      groupPda.toBuffer(),
+      contactAKeypair.publicKey.toBuffer(),
+    ], program.programId);
+  let [contactBGroupPda, contactBGroupPdaBump] = PublicKey.findProgramAddressSync(
+    [
+      anchor.utils.bytes.utf8.encode("group_contact"),
+      groupPda.toBuffer(),
+      contactBKeypair.publicKey.toBuffer(),
     ], program.programId);
 
   const contacts = [contactAPda, contactBPda];
@@ -173,6 +193,55 @@ describe("solchat", () => {
     const responseB = await anchor.web3.sendAndConfirmTransaction(provider.connection, txB, [contactBKeypair]);
     const conversationB = await program.account.directConversation.fetch(directConversationPda);
     expect(conversationB.messages[2]).is.equal(contactBMessage);   
+  });
+
+  it("Create Group", async () => {
+    const groupData = "";
+    const tx = await program.methods
+      .createGroup(groupNonce, groupName, groupData)
+      .accounts({
+        signer: contactAKeypair.publicKey,
+        contact: contactAPda,
+        group: groupPda,
+        signerGroupContact: contactAGroupPda,
+      })
+      .transaction();
+    
+    const txSignature = await anchor.web3.sendAndConfirmTransaction(provider.connection, tx, [contactAKeypair]);
+    const group = await program.account.group.fetch(groupPda);
+    expect(group.bump).is.equal(groupPdaBump);
+    expect(group.nonce).is.equal(groupNonce);
+    expect(group.owner).is.eql(contactAKeypair.publicKey);
+    expect(group.name).is.equal(groupName);
+    expect(group.data).is.equal(groupData);
+
+    const groupContact = await program.account.groupContact.fetch(contactAGroupPda);
+    expect(groupContact.bump).is.equal(contactAGroupPdaBump);
+    expect(groupContact.group).is.eql(groupPda);
+    expect(groupContact.contact).is.eql(contactAPda);
+    expect(groupContact.role).is.equal(1);
+  });
+
+
+  it("Add Group Contact", async () => {
+    const tx = await program.methods
+      .addGroupContact(0)
+      .accounts({
+        signer: contactAKeypair.publicKey,
+        group: groupPda,
+        signerGroupContact: contactAGroupPda,
+        groupContact: contactBGroupPda,
+        contact: contactBPda
+      })
+      .transaction();
+    
+    const txSignature = await anchor.web3.sendAndConfirmTransaction(provider.connection, tx, [contactAKeypair]);
+
+    const groupContact = await program.account.groupContact.fetch(contactBGroupPda);
+    expect(groupContact.bump).is.equal(contactBGroupPdaBump);
+    expect(groupContact.group).is.eql(groupPda);
+    expect(groupContact.contact).is.eql(contactBPda);
+    expect(groupContact.role).is.equal(0);
   });
 
 });

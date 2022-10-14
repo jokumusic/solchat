@@ -8,7 +8,7 @@ solchat = "FjQr3txvbowVHZud1Ec7QZTYGkmSihvLgyrBmF8FkM5"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
