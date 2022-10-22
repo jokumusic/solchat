@@ -38,13 +38,13 @@ describe("solchat", () => {
     [
       anchor.utils.bytes.utf8.encode("group_contact"),
       groupPda.toBuffer(),
-      contactAKeypair.publicKey.toBuffer(),
+      contactAPda.toBuffer(),
     ], program.programId);
   let [contactBGroupPda, contactBGroupPdaBump] = PublicKey.findProgramAddressSync(
     [
       anchor.utils.bytes.utf8.encode("group_contact"),
       groupPda.toBuffer(),
-      contactBKeypair.publicKey.toBuffer(),
+      contactBPda.toBuffer(),
     ], program.programId);
 
   const contacts = [contactAPda, contactBPda];
@@ -219,15 +219,17 @@ describe("solchat", () => {
     expect(groupContact.bump).is.equal(contactAGroupPdaBump);
     expect(groupContact.group).is.eql(groupPda);
     expect(groupContact.contact).is.eql(contactAPda);
-    expect(groupContact.role).is.equal(1);
+    expect(groupContact.groupContactRole).is.equal(4);//admin
+    expect(groupContact.groupContactPreference).is.equal(1);//subscribe
   });
 
 
-  it("Add Group Contact", async () => {
+  it("Create Group Contact", async () => {
     const tx = await program.methods
-      .addGroupContact(0)
+      .createGroupContact()
       .accounts({
         signer: contactAKeypair.publicKey,
+        signerContact: contactAPda,
         group: groupPda,
         signerGroupContact: contactAGroupPda,
         groupContact: contactBGroupPda,
@@ -241,7 +243,47 @@ describe("solchat", () => {
     expect(groupContact.bump).is.equal(contactBGroupPdaBump);
     expect(groupContact.group).is.eql(groupPda);
     expect(groupContact.contact).is.eql(contactBPda);
-    expect(groupContact.role).is.equal(0);
+    expect(groupContact.groupContactRole).is.equal(0);
+    expect(groupContact.groupContactPreference).is.equal(0);
+  });
+
+  it("Set Group Contact Role", async () => {
+    const tx = await program.methods
+      .setGroupContactRole(2) //write
+      .accounts({
+        signer: contactAKeypair.publicKey,
+        signerContact: contactAPda,
+        signerGroupContact: contactAGroupPda,
+        groupContact: contactBGroupPda,
+      })
+      .transaction();
+    
+    const txSignature = await anchor.web3.sendAndConfirmTransaction(provider.connection, tx, [contactAKeypair]);
+
+    const groupContact = await program.account.groupContact.fetch(contactBGroupPda);
+    expect(groupContact.bump).is.equal(contactBGroupPdaBump);
+    expect(groupContact.group).is.eql(groupPda);
+    expect(groupContact.contact).is.eql(contactBPda);
+    expect(groupContact.groupContactRole).is.equal(2);
+  });
+
+  it("Set Group Contact Preference", async () => {
+    const tx = await program.methods
+      .setGroupContactPreference(1) //subscribe
+      .accounts({
+        signer: contactBKeypair.publicKey,
+        signerContact: contactBPda,
+        signerGroupContact: contactBGroupPda,
+      })
+      .transaction();
+    
+    const txSignature = await anchor.web3.sendAndConfirmTransaction(provider.connection, tx, [contactBKeypair]);
+
+    const groupContact = await program.account.groupContact.fetch(contactBGroupPda);
+    expect(groupContact.bump).is.equal(contactBGroupPdaBump);
+    expect(groupContact.group).is.eql(groupPda);
+    expect(groupContact.contact).is.eql(contactBPda);
+    expect(groupContact.groupContactPreference).is.equal(1);
   });
 
 });

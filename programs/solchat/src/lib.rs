@@ -90,19 +90,30 @@ pub mod solchat {
         signer_group_contact.bump = *ctx.bumps.get("signer_group_contact").unwrap();
         signer_group_contact.group = group.key();
         signer_group_contact.contact = ctx.accounts.contact.key();
-        signer_group_contact.role = GroupContactRole::ADMIN;
+        signer_group_contact.group_contact_role = GroupContactRole::ADMIN;
+        signer_group_contact.group_contact_preference = GroupContactPreference::SUBSCRIBE;
 
         Ok(())
     }
 
-    pub fn add_group_contact(ctx: Context<AddGroupContact>, role: u8) -> Result<()> {
-       
+    pub fn create_group_contact(ctx: Context<CreateGroupContact>) -> Result<()> {
         let group_contact = &mut ctx.accounts.group_contact;
         group_contact.bump = *ctx.bumps.get("group_contact").unwrap();
         group_contact.group = ctx.accounts.group.key();
         group_contact.contact = ctx.accounts.contact.key();
-        group_contact.role = role;
+        group_contact.group_contact_role = GroupContactRole::IGNORE;
+        group_contact.group_contact_preference = GroupContactPreference::IGNORE;
 
+        Ok(())
+    }
+
+    pub fn set_group_contact_role(ctx: Context<SetGroupContactRole>, role: u8) -> Result<()> {
+        ctx.accounts.group_contact.group_contact_role = role;
+        Ok(())
+    }
+
+    pub fn set_group_contact_preference(ctx: Context<SetGroupContactPreference>, preference: u8) -> Result<()> {
+        ctx.accounts.signer_group_contact.group_contact_preference = preference;
         Ok(())
     }
 
@@ -231,7 +242,7 @@ pub struct CreateGroup<'info> {
         init,
         payer = signer,
         space = 8 + GROUP_CONTACT_SIZE,
-        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), signer.key().as_ref()],
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), contact.key().as_ref()],
         bump
     )]
     pub signer_group_contact: Account<'info, GroupContact>,
@@ -239,29 +250,35 @@ pub struct CreateGroup<'info> {
 }
 
 #[derive(Accounts)]
-pub struct AddGroupContact<'info> {
+pub struct CreateGroupContact<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [CONTACT_SEED_BYTES, signer.key().as_ref()],
+        bump = signer_contact.bump,
+    )]
+    pub signer_contact: Box<Account<'info, Contact>>,
 
     #[account(
         seeds = [GROUP_SEED_BYTES, group.owner.as_ref(), &group.nonce.to_be_bytes()],
         bump=group.bump
     )]
-    pub group: Account<'info, Group>,
-
+    pub group: Box<Account<'info, Group>>,
 
     #[account(
-        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), signer.key().as_ref()],
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), signer_group_contact.contact.as_ref()],
         bump= signer_group_contact.bump,
-        constraint = signer_group_contact.group == group.key() && signer_group_contact.role == GroupContactRole::ADMIN
+        constraint = signer_group_contact.group == group.key() && signer_group_contact.group_contact_role == GroupContactRole::ADMIN
     )]
-    pub signer_group_contact: Account<'info, GroupContact>,
+    pub signer_group_contact: Box<Account<'info, GroupContact>>,
+
 
     #[account(
         init,
         payer = signer,
         space = 8 + GROUP_CONTACT_SIZE,
-        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), contact.creator.as_ref()],
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), contact.key().as_ref()],
         bump
     )]
     pub group_contact: Account<'info, GroupContact>,
@@ -270,8 +287,56 @@ pub struct AddGroupContact<'info> {
         seeds = [CONTACT_SEED_BYTES, contact.creator.as_ref()],
         bump = contact.bump,
     )]
-    pub contact: Account<'info, Contact>,
+    pub contact: Box<Account<'info, Contact>>,
     pub system_program: Program<'info, System>
+}
+
+
+#[derive(Accounts)]
+pub struct SetGroupContactRole<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [CONTACT_SEED_BYTES, signer.key().as_ref()],
+        bump = signer_contact.bump,
+    )]
+    pub signer_contact: Account<'info, Contact>,
+
+    #[account(
+        seeds = [GROUP_CONTACT_SEED_BYTES, signer_group_contact.group.as_ref(), signer_contact.key().as_ref()],
+        bump= signer_group_contact.bump,
+        constraint = signer_group_contact.group_contact_role == GroupContactRole::ADMIN,
+    )]
+    pub signer_group_contact: Account<'info, GroupContact>,
+
+    #[account(
+        mut,
+        seeds = [GROUP_CONTACT_SEED_BYTES, group_contact.group.as_ref(), group_contact.contact.as_ref()],
+        bump = group_contact.bump,
+        constraint = group_contact.group == signer_group_contact.group
+    )]
+    pub group_contact: Account<'info, GroupContact>,
+}
+
+#[derive(Accounts)]
+pub struct SetGroupContactPreference<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [CONTACT_SEED_BYTES, signer.key().as_ref()],
+        bump = signer_contact.bump,
+    )]
+    pub signer_contact: Account<'info, Contact>,
+
+    #[account(
+        mut,
+        seeds = [GROUP_CONTACT_SEED_BYTES, signer_group_contact.group.as_ref(), signer_contact.key().as_ref()],
+        bump= signer_group_contact.bump,
+        constraint = signer_group_contact.contact == signer_contact.key()
+    )]
+    pub signer_group_contact: Account<'info, GroupContact>,
 }
 
 
@@ -311,13 +376,14 @@ pub struct Group {
     pub data: String, //4+size;
 }
 
-const GROUP_CONTACT_SIZE: usize = 1 + 32 + 32 + 1;
+const GROUP_CONTACT_SIZE: usize = 1 + 32 + 32 + 1 + 1;
 #[account]
 pub struct GroupContact {
     pub bump: u8, //1;
     pub group: Pubkey, //32;
     pub contact: Pubkey, //32;
-    pub role: u8, //1;
+    pub group_contact_role: u8, //1; GroupContactRole
+    pub group_contact_preference: u8, //1; GroupContactPreference
 }
 
 
@@ -335,6 +401,14 @@ pub enum ErrorCode {
 
 struct GroupContactRole;
 impl GroupContactRole {
-    //const STANDARD: u8 = 0;
-    const ADMIN: u8 = 1;
+    const IGNORE: u8 = 0;
+    //const READ: u8 = 1;
+    //const WRITE: u8 = 2;
+    const ADMIN: u8 = 4;
+}
+
+struct GroupContactPreference;
+impl GroupContactPreference {
+    const IGNORE: u8 = 0;
+    const SUBSCRIBE: u8 = 1;
 }
