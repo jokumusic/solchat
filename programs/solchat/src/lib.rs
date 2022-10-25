@@ -82,7 +82,7 @@ pub mod solchat {
         let group = &mut ctx.accounts.group;
         group.bump = *ctx.bumps.get("group").unwrap();
         group.nonce = nonce;
-        group.owner = ctx.accounts.signer.key();
+        group.creator = ctx.accounts.signer.key();
         group.name = name;
         group.data = data;
 
@@ -92,6 +92,23 @@ pub mod solchat {
         signer_group_contact.contact = ctx.accounts.contact.key();
         signer_group_contact.group_contact_role = GroupContactRole::ADMIN;
         signer_group_contact.group_contact_preference = GroupContactPreference::SUBSCRIBE;
+
+        Ok(())
+    }
+
+    pub fn edit_group(ctx: Context<EditGroup>, name: String, data: String) -> Result<()> {
+        let signer_group_contact = &ctx.accounts.signer_group_contact;
+        if signer_group_contact.group_contact_role != GroupContactRole::ADMIN {
+            return Err(ErrorCode::NotAuthorized.into());
+        }
+
+        if name.len() > GROUP_NAME_LEN {
+            return Err(ErrorCode::NameIsTooLong.into());
+        }
+
+        let group = &mut ctx.accounts.group;
+        group.name = name;
+        group.data = data;
 
         Ok(())
     }
@@ -250,6 +267,38 @@ pub struct CreateGroup<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(name: String, data: String)]
+pub struct EditGroup<'info> {
+    
+    #[account(
+        mut,
+        realloc = 8 + GROUP_SIZE + data.len(),
+        realloc::payer = signer,
+        realloc::zero = false,
+        seeds = [GROUP_SEED_BYTES, group.creator.as_ref(), &group.nonce.to_be_bytes()],
+        bump = group.bump
+    )]
+    pub group: Account<'info, Group>,
+
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    #[account(
+        seeds = [CONTACT_SEED_BYTES, signer.key().as_ref()],
+        bump = signer_contact.bump,
+        constraint = signer_contact.creator == signer.key()
+    )]
+    pub signer_contact: Account<'info, Contact>,
+
+    #[account(
+        seeds = [GROUP_CONTACT_SEED_BYTES, group.key().as_ref(), signer_contact.key().as_ref()],
+        bump = signer_group_contact.bump,
+    )]
+    pub signer_group_contact: Account<'info, GroupContact>,
+    pub system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
 pub struct CreateGroupContact<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
@@ -261,7 +310,7 @@ pub struct CreateGroupContact<'info> {
     pub signer_contact: Box<Account<'info, Contact>>,
 
     #[account(
-        seeds = [GROUP_SEED_BYTES, group.owner.as_ref(), &group.nonce.to_be_bytes()],
+        seeds = [GROUP_SEED_BYTES, group.creator.as_ref(), &group.nonce.to_be_bytes()],
         bump=group.bump
     )]
     pub group: Box<Account<'info, Group>>,
@@ -371,7 +420,7 @@ const GROUP_SIZE: usize = 1 + 2 + 32 + (4+GROUP_NAME_LEN) + 4;
 pub struct Group {
     pub bump: u8, //1;
     pub nonce: u16, //2;
-    pub owner: Pubkey, //32;
+    pub creator: Pubkey, //32;
     pub name: String, //4+100;
     pub data: String, //4+size;
 }
@@ -394,8 +443,8 @@ pub enum ErrorCode {
     NameIsTooLong,
     #[msg("message is more than 1024 characters")]
     MessageIsTooLong,
-    #[msg("test error")]
-    TestError,
+    #[msg("Not Authorized")]
+    NotAuthorized,
 }
 
 

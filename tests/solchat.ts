@@ -25,7 +25,7 @@ describe("solchat", () => {
     ], program.programId);
   let [contactBPda, contactBPdaBump] = PublicKey.findProgramAddressSync(
     [
-      anchor.utils.bytes.utf8.encode("contact"), 
+      anchor.utils.bytes.utf8.encode("contact"),
       contactBKeypair.publicKey.toBuffer(),             
     ], program.programId);
   let [groupPda, groupPdaBump] = PublicKey.findProgramAddressSync(
@@ -211,7 +211,7 @@ describe("solchat", () => {
     const group = await program.account.group.fetch(groupPda);
     expect(group.bump).is.equal(groupPdaBump);
     expect(group.nonce).is.equal(groupNonce);
-    expect(group.owner).is.eql(contactAKeypair.publicKey);
+    expect(group.creator).is.eql(contactAKeypair.publicKey);
     expect(group.name).is.equal(groupName);
     expect(group.data).is.equal(groupData);
 
@@ -221,6 +221,28 @@ describe("solchat", () => {
     expect(groupContact.contact).is.eql(contactAPda);
     expect(groupContact.groupContactRole).is.equal(4);//admin
     expect(groupContact.groupContactPreference).is.equal(1);//subscribe
+  });
+
+  it("Edit Group", async () => {
+    const updatedGroupData = "{}";
+    const updatedGroupName = groupName + "-updated";
+    const tx = await program.methods
+      .editGroup(updatedGroupName, updatedGroupData)
+      .accounts({
+        group: groupPda,
+        signer: contactAKeypair.publicKey,
+        signerContact: contactAPda,
+        signerGroupContact: contactAGroupPda,
+      })
+      .transaction();
+    
+    const txSignature = await anchor.web3.sendAndConfirmTransaction(provider.connection, tx, [contactAKeypair]);
+    const updatedGroup = await program.account.group.fetch(groupPda);
+    expect(updatedGroup.bump).is.equal(groupPdaBump);
+    expect(updatedGroup.nonce).is.equal(groupNonce);
+    expect(updatedGroup.creator).is.eql(contactAKeypair.publicKey);
+    expect(updatedGroup.name).is.equal(updatedGroupName);
+    expect(updatedGroup.data).is.equal(updatedGroupData);
   });
 
 
